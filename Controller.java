@@ -89,6 +89,8 @@ public class Controller implements Initializable {
     private Boolean playing=true;
     private Point2D initial;
     private Point2D end;
+    private int zoomwidth = 0;
+    private int zoomheight = 0;
 
     @FXML public ImageView imageview;
     @FXML public Canvas canvas;
@@ -97,7 +99,7 @@ public class Controller implements Initializable {
     @FXML public Slider slider;
     @FXML public RadioButton rd1;
     @FXML public RadioButton rd2;
-    @FXML public ComboBox combo;
+    //@FXML public ComboBox combo;
     @FXML public ScrollPane scrollPane;
     @FXML public Button zm;
     @FXML public Pane pane1;
@@ -160,7 +162,7 @@ public class Controller implements Initializable {
     public void clear(ActionEvent event)throws IOException{
         gc.clearRect(0,0,canvas.getWidth(),canvas.getHeight());
     }
-    public void erase(ActionEvent event)throws IOException{
+    public void erase(ActionEvent event)throws IOException{   //ERASES your doodles
 
         canvas.setOnMousePressed(e -> {
             gc.clearRect(e.getX() - 2, e.getY() - 2, 25, 25);
@@ -171,17 +173,9 @@ public class Controller implements Initializable {
         pane.setOnMouseClicked(null);
         pane.setOnMouseReleased(null);
     }
-    public void rs(ActionEvent event)throws IOException{           //players
-        if(rd1.isSelected()){
-            teams("C:\\\\Users\\\\viswa\\\\Desktop\\\\football\\\\scene1.png");
-        }
-        if(rd2.isSelected()){
-            teams("C:\\\\Users\\\\viswa\\\\Desktop\\\\football\\\\scene2.png");
-        }
-    }
 
     public void save(ActionEvent event)throws IOException{
-        hold();
+        savesnapshot();  //saves the imageview pane snapshot of whatever modifications you have done to the image
     }
 
     public void reset(ActionEvent event)throws IOException{
@@ -191,6 +185,13 @@ public class Controller implements Initializable {
         pane.setLayoutY(0);
         pane.setOnMouseClicked(null);
         pane.setOnMouseReleased(null);
+        Rectangle2D viewportRect2 = new Rectangle2D(
+                0,
+                0,
+                imageview.getFitWidth(),
+                imageview.getFitHeight());
+        imageview.setViewport(viewportRect2);
+
     }
 
 
@@ -230,6 +231,7 @@ public class Controller implements Initializable {
         Mat image = Imgcodecs.imread(frames.get(framepointer));
         s=framepointer;
         //actual image is scaled to fit the imageview pane. In order to zoom correctly
+        //note: the imageview has been formatted such that "preserve ratio" is not ticked (in scene builder)
         //we need to get the scaling between actual image and imageview pane size
         float scaleheight = (float) image.height() / (float) imageview.getFitHeight();
         float scalewidth =  (float) image.width() / (float) imageview.getFitWidth();
@@ -240,21 +242,29 @@ public class Controller implements Initializable {
         BufferedImage bufImage = ImageIO.read(in);
         WritableImage writableImage = SwingFXUtils.toFXImage(bufImage, null);
         imageview.setImage(writableImage);
-        //actual image size is scaled to fit the imageview pane size
+        ////////////////////////////////////////////////////////
+        //actual image size is zoomed and scaled to fit appropriately inside the imageview pane
         if (zoomflag==true) {
             int zoomwidth = (int) (end.getX() - initial.getX());
             int zoomheight = (int) (end.getY() - initial.getY());
-            Rectangle2D viewportRect1 = new Rectangle2D(
+            // Now we have to center the zoomed image
+            //first lets get the image pane center
+            int xcenter = (int) imageview.getFitWidth()/2;
+            int ycenter = (int) imageview.getFitHeight()/2;
+            int Xzoomleft = (int) ( xcenter - zoomwidth/2);
+            int Yzoomleft = (int) ( ycenter - zoomheight/2);
+            Rectangle2D viewportRect2 = new Rectangle2D(
                     initial.getX() * scalewidth,
                     initial.getY() * scaleheight,
                     zoomwidth * scalewidth,
                     zoomheight * scaleheight);
-            imageview.setViewport(viewportRect1);
-            //imageview.resize(1000,600);
-            imageview.setPreserveRatio(true);
-            imageview.setSmooth(true);
-            imageview.setCache(true);
-        }
+            imageview.setViewport(viewportRect2);  //this focuses the image only onto the zoomed portion
+            imageview.setLayoutX(abs(Xzoomleft));  //aligns the image to the center of the screen
+            imageview.setLayoutY(abs(Yzoomleft));  //aligns the image to the center of the screen
+            imageview.setFitWidth(zoomwidth);      //aligns the image to the center of the screen
+            imageview.setFitHeight(zoomheight);    //aligns the image to the center of the screen
+            zoomflag=false;
+        }   //end of zoom flag loop
     }
 
     //this sub function takes care of the manual drawing doodling work
@@ -285,32 +295,11 @@ public class Controller implements Initializable {
     ObservableList<String> list=FXCollections.observableArrayList("CIRCLE","RECTANGLE","TRIANGLE");
 
     public void initialize(URL location, ResourceBundle resources) {
-        combo.setItems(list);
-
     }
     public void combobox(ActionEvent event)throws IOException{
         gc = canvas.getGraphicsContext2D();
         pane.setOnMouseClicked(null);
         pane.setOnMouseReleased(null);
-        if(combo.getValue()=="CIRCLE"){
-            canvas.setOnMousePressed(event1 -> {
-                gc.strokeOval(event1.getX(),event1.getY(),50,50);
-                canvas.setOnMouseDragged(null);
-            });
-        }
-        if(combo.getValue()=="RECTANGLE"){
-            canvas.setOnMousePressed(event1 -> {
-                gc.strokeRect(event1.getX(),event1.getY(),50,50);
-                canvas.setOnMouseDragged(null);
-
-            });
-        }
-        if(combo.getValue()=="TRIANGLE"){
-            canvas.setOnMousePressed(event1 -> {
-                gc.strokePolygon(new double[]{event1.getX(),event1.getX()+30,event1.getX()+60},new double[]{event1.getY(),event1.getY()+30,event1.getY()},3);
-                canvas.setOnMouseDragged(null);
-            });
-        }
     }
 
     public void zoom(ActionEvent event){
@@ -339,6 +328,12 @@ public class Controller implements Initializable {
                 pane.setOnMouseReleased(new EventHandler<MouseEvent>() {
                     public void handle(MouseEvent event) {
                         end = new Point2D((event.getX()), event.getY());
+                        if (initial.getX() > end.getX()) {
+                            System.out.println("ERROR: Please zoom from left to right only, looks like you are zooming from right to left !");
+                        }
+                        if (initial.getY() > end.getY()) {
+                            System.out.println("ERROR: Please zoom from top to bottom only, looks like you are zooming from bottom to top !");
+                        }
                         //System.out.println(end.getX());
                         //System.out.println(end.getY());
                     }
@@ -348,32 +343,10 @@ public class Controller implements Initializable {
     }
 
 
-    public void teams(String s)throws IOException{           //players
-        canvas.setOnMousePressed(e -> {
-            String file = s;
-            Mat image = Imgcodecs.imread(file);
-            MatOfByte matOfByte = new MatOfByte();
-            Imgcodecs.imencode(".jpg", image, matOfByte);
-            byte[] byteArray = matOfByte.toArray();
-            InputStream in = new ByteArrayInputStream(byteArray);
-            BufferedImage bufImage = null;
-            try {
-                bufImage = ImageIO.read(in);
-            } catch (IOException e1) {
-                e1.printStackTrace();
-            }
-            WritableImage writableImage = SwingFXUtils.toFXImage(bufImage, null);
-            gc.drawImage(writableImage,e.getX(),e.getY());
-        });
-    }
-
-    public void hold() throws IOException {                 //save
+    public void savesnapshot() throws IOException {   //saves the imageview pane snapshot of whatever modifications you have done to the image
         File file =new File(frames.get(s));
         //System.out.println(frames.get(s));
-        WritableImage writableImage = new WritableImage(356, 255);
-        WritableImage snapshot = pane.snapshot(new SnapshotParameters(), writableImage);
-        //System.out.println(snapshot.getWidth());
-        //System.out.println(snapshot.getHeight());
+        WritableImage snapshot = pane.snapshot(new SnapshotParameters(), null);
         ImageIO.write(SwingFXUtils.fromFXImage(snapshot, null), "png", file);
     }
 
